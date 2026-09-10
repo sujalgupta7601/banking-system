@@ -1,0 +1,185 @@
+const ImageKit = require("@imagekit/nodejs");
+const userModel = require("../models/user.model")
+const jwt = require("jsonwebtoken")
+const emailService = require("../services/email.service")
+const tokenBlackListModel = require("../models/blackList.model")
+const imagekit = new ImageKit({
+    privateKey: process.env.IMAGEKIT_PRIVATE_KEY,
+    publicKey: process.env.IMAGEKIT_PUBLIC_KEY,
+    urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT
+});
+/**
+* - user register controller
+* - POST /api/auth/register
+*/
+async function userRegisterController(req, res) {
+    const { email, password, name } = req.body
+
+    const isExists = await userModel.findOne({
+        email: email
+    })
+
+    if (isExists) {
+        return res.status(422).json({
+            message: "User already exists with email.",
+            status: "failed"
+        })
+    }
+
+    const user = await userModel.create({
+        email, password, name
+    })
+
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "3d" })
+
+    res.cookie("token", token)
+
+    res.status(201).json({
+        user: {
+            _id: user._id,
+            email: user.email,
+            name: user.name,
+            profileImage: user.profileImage
+        },
+        token
+    })
+
+    await emailService.sendRegistrationEmail(user.email, user.name)
+}
+
+/**
+ * - User Login Controller
+ * - POST /api/auth/login
+  */
+
+async function userLoginController(req, res) {
+    const { email, password } = req.body
+
+    const user = await userModel.findOne({ email }).select("+password")
+
+    if (!user) {
+        return res.status(401).json({
+            message: "Email or password is INVALID"
+        })
+    }
+
+    const isValidPassword = await user.comparePassword(password)
+
+    if (!isValidPassword) {
+        return res.status(401).json({
+            message: "Email or password is INVALID"
+        })
+    }
+
+    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "3d" })
+
+    res.cookie("token", token)
+
+    res.status(200).json({
+        user: {
+            _id: user._id,
+            email: user.email,
+            name: user.name,
+            profileImage: user.profileImage
+        },
+        token
+    })
+
+}
+/**
+ * - Update User Profile
+ * - PUT /api/auth/profile
+ */
+async function updateProfileController(req, res) {
+    try {
+        const { name, email, profileImage } = req.body
+        console.log("Profile image received by backend:", profileImage)
+        if (!name || !email) {
+            return res.status(400).json({
+                message: "Name and email are required"
+            })
+        }
+
+        const existingUser = await userModel.findOne({
+            email: email,
+            _id: { $ne: req.user._id }
+        })
+
+        if (existingUser) {
+            return res.status(422).json({
+                message: "Email already exists"
+            })
+        }
+
+        const user = await userModel.findByIdAndUpdate(
+            req.user._id,
+            { name, email, profileImage },
+            { new: true, runValidators: true }
+        )
+        console.log("Updated profile image in database:", user.profileImage)
+        return res.status(200).json({
+            message: "Profile updated successfully",
+            user: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                profileImage: user.profileImage
+            }
+        })
+    } catch (error) {
+        console.error("Update profile error:", error)
+
+        return res.status(500).json({
+            message: "Unable to update profile"
+        })
+    }
+}
+
+/**
+ * - User Logout Controller
+ * - POST /api/auth/logout
+  */
+async function userLogoutController(req, res) {
+    const token = req.cookies.token || req.headers.authorization?.split(" ")[1]
+
+    if (!token) {
+        return res.status(200).json({
+            message: "User logged out successfully"
+        })
+    }
+
+
+
+    await tokenBlackListModel.create({
+        token: token
+    })
+
+    res.clearCookie("token")
+
+    res.status(200).json({
+        message: "User logged out successfully"
+    })
+
+}
+async function getImageKitAuth(req, res) {
+    try {
+        const authenticationParameters =
+            imagekit.helper.getAuthenticationParameters();
+
+        return res.status(200).json(authenticationParameters);
+    } catch (error) {
+        console.error("ImageKit authentication error:", error);
+
+        return res.status(500).json({
+            message: "Unable to generate ImageKit authentication",
+        });
+    }
+}
+
+module.exports = {
+    userRegisterController,
+    userLoginController,
+    userLogoutController,
+    updateProfileController,
+    getImageKitAuth
+}
