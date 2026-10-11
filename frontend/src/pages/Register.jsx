@@ -66,7 +66,11 @@ function Register() {
                 phone: formData.phone,
                 password: formData.password,
             });
+            if (!response.token) {
+                throw new Error("Registration succeeded but no token was returned.");
+            }
 
+            localStorage.setItem("token", response.token);
             console.log("Register response:", response);
 
             // Save authenticated user

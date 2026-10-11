@@ -1,32 +1,46 @@
+
 const API_BASE_URL = "https://banking-system-usf3.onrender.com";
 
-
-// ===============================
-// Generic API Request
-// ===============================
-
 async function apiRequest(endpoint, options = {}) {
+    const token = localStorage.getItem("token");
 
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+    // Prevent duplicate slashes in the URL
+    const url = `${API_BASE_URL.replace(/\/+$/, "")}/${endpoint.replace(/^\/+/, "")}`;
+
+    const headers = {
+        ...(options.headers || {}),
+    };
+
+    // Add JSON content type when sending JSON
+    if (options.body && !(options.body instanceof FormData)) {
+        headers["Content-Type"] = "application/json";
+    }
+
+    // Attach JWT for protected requests
+    if (token) {
+        headers.Authorization = `Bearer ${token}`;
+    }
+
+    const response = await fetch(url, {
         ...options,
-
-        headers: {
-            "Content-Type": "application/json",
-            ...(options.headers || {}),
-        },
-
-        // Important for authentication cookies
+        headers,
         credentials: "include",
     });
 
-    const data = await response.json();
+    const contentType = response.headers.get("content-type") || "";
+    const data = contentType.includes("application/json")
+        ? await response.json()
+        : null;
 
     if (!response.ok) {
-        throw new Error(data.message || "Something went wrong");
+        throw new Error(
+            data?.message || `Request failed with status ${response.status}`
+        );
     }
 
     return data;
 }
+
 
 
 // ===============================

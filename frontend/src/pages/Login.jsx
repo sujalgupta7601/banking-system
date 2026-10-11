@@ -32,7 +32,11 @@ function Login() {
                 email,
                 password,
             });
+            if (!response.token) {
+                throw new Error("Login succeeded but no token was returned.");
+            }
 
+            localStorage.setItem("token", response.token);
             console.log("Login response:", response);
 
             // Save logged-in user in AuthContext
